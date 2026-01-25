@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useTranslations } from "next-intl";
 
+import { ensureUserSettings } from "@/lib/supabase/ensureUserSettings";
+import { upsertUserSettings, UserSettings } from "@/lib/supabase/userSettings";
+
 import { AccountSection } from "@/components/setting/AccountSection";
 import { PreferencesSection } from "@/components/setting/PreferencesSection";
 import { SecuritySection } from "@/components/setting/SecuritySection";
@@ -26,30 +29,18 @@ type UserInfo = {
   };
 };
 
-type ThemeMode = "dark" | "light" | "gray";
+type ThemeMode = "dark" | "gray" | "light";
 type LangMode = "ja" | "en";
-
-/* =====================
-   Constants
-   ===================== */
-const LS_THEME = "ui:theme";
-const LS_LANG = "ui:lang";
 
 /* =====================
    Helpers
    ===================== */
-function setSafeLocalStorage(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {}
-}
-
 function applyTheme(theme: ThemeMode) {
   document.documentElement.dataset.theme = theme;
 }
 
 function applyLang(lang: LangMode) {
-  document.documentElement.lang = lang === "ja" ? "ja" : "en";
+  document.documentElement.lang = lang;
   document.documentElement.dataset.lang = lang;
 }
 
@@ -62,34 +53,10 @@ export default function SettingsPage() {
 
   const [checking, setChecking] = useState(true);
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [settings, setSettings] = useState<UserSettings | null>(null);
 
   /* =====================
-     Preferences (INIT)
-     ===================== */
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    if (typeof window === "undefined") return "dark";
-    const stored = localStorage.getItem(LS_THEME);
-    return stored === "light" || stored === "gray" || stored === "dark"
-      ? stored
-      : "dark";
-  });
-
-  const [lang, setLang] = useState<LangMode>(() => {
-    if (typeof window === "undefined") return "ja";
-    const stored = localStorage.getItem(LS_LANG);
-    return stored === "en" || stored === "ja" ? stored : "ja";
-  });
-
-  /* =====================
-     Apply preferences
-     ===================== */
-  useEffect(() => {
-    applyTheme(theme);
-    applyLang(lang);
-  }, [theme, lang]);
-
-  /* =====================
-     Auth + User Load
+     Auth + Initial Load
      ===================== */
   useEffect(() => {
     const load = async () => {
@@ -134,6 +101,16 @@ export default function SettingsPage() {
         },
       });
 
+      // 🔽 DB から settings を必ず取得（なければ生成）
+      const s = await ensureUserSettings();
+      if (!s) return;
+
+      setSettings(s);
+
+      // 🔽 DOM へ反映
+      applyTheme(s.theme as ThemeMode);
+      applyLang(s.lang as LangMode);
+
       setChecking(false);
     };
 
@@ -149,20 +126,31 @@ export default function SettingsPage() {
   }, [router, t]);
 
   /* =====================
-     Handlers
+     Update handlers
      ===================== */
-  const onChangeTheme = (next: ThemeMode) => {
-    setTheme(next);
-    setSafeLocalStorage(LS_THEME, next);
-  };
+  const updateSettings = async (next: Partial<UserSettings>) => {
+    if (!settings) return;
 
-  const onChangeLang = (next: LangMode) => {
-    setLang(next);
-    setSafeLocalStorage(LS_LANG, next);
+    const updated: UserSettings = {
+      ...settings,
+      ...next,
+    };
 
-    // 現在のパスを維持したまま locale だけ切り替える
-    const currentPath = window.location.pathname.replace(/^\/(ja|en)/, "");
-    router.replace(`/${next}${currentPath}`);
+    // 楽観的更新
+    setSettings(updated);
+
+    // DOM 反映
+    if (next.theme) applyTheme(next.theme as ThemeMode);
+    if (next.lang) applyLang(next.lang as LangMode);
+
+    // DB 永続化
+    await upsertUserSettings(updated);
+
+    // locale 切り替え（lang変更時のみ）
+    if (next.lang) {
+      const currentPath = window.location.pathname.replace(/^\/(ja|en)/, "");
+      router.replace(`/${next.lang}${currentPath}`);
+    }
   };
 
   const signOut = async () => {
@@ -181,7 +169,7 @@ export default function SettingsPage() {
   /* =====================
      Render guards
      ===================== */
-  if (checking) {
+  if (checking || !user || !settings) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-[var(--background)] text-[var(--foreground)]">
         <div className="text-sm text-[var(--text-muted)]">
@@ -191,8 +179,9 @@ export default function SettingsPage() {
     );
   }
 
-  if (!user) return null;
-
+  /* =====================
+     Render
+     ===================== */
   return (
     <div className="min-h-screen w-screen bg-[var(--background)] text-[var(--foreground)]">
       {/* Top Bar */}
@@ -229,16 +218,14 @@ export default function SettingsPage() {
           />
 
           <PreferencesSection
-            theme={theme}
-            lang={lang}
-            onChangeTheme={onChangeTheme}
-            onChangeLang={onChangeLang}
+            theme={settings.theme as ThemeMode}
+            lang={settings.lang as LangMode}
+            onChangeTheme={(t) => updateSettings({ theme: t })}
+            onChangeLang={(l) => updateSettings({ lang: l })}
           />
 
           <SecuritySection />
-
           <IntegrationsSection providersConnected={user.providersConnected} />
-
           <AboutSection />
         </div>
       </div>

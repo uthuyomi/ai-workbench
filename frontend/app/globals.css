@@ -1,0 +1,221 @@
+@import "tailwindcss";
+
+/* =========================
+   Design tokens
+   （Default = dark）
+   ========================= */
+
+:root {
+  /* Base background / foreground */
+  --background: #0b0d10;
+  --foreground: #f1f5f9;
+
+  /* Surface layers */
+  --bg-side: #0f1319;
+  --bg-card: #161a20;
+  --bg-hover: #1f2530;
+
+  /* Text hierarchy */
+  --text-main: #f1f5f9;
+  --text-muted: #9aa4b2;
+  --text-faint: #6b7280;
+
+  /* Accent */
+  --accent-blue: #4f46e5;
+  --accent-green: #22c55e;
+  --accent-yellow: #eab308;
+  --accent-red: #ef4444;
+
+  /* Border / effects */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+
+  /* Radius */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+
+  /* Shadow */
+  --shadow-soft: 0 12px 40px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* =========================
+   Gray theme
+   ========================= */
+
+:root[data-theme="gray"] {
+  --background: #1c1f24;
+  --foreground: #e5e7eb;
+
+  --bg-side: #20242a;
+  --bg-card: #2a2f36;
+  --bg-hover: #323844;
+
+  --text-main: #e5e7eb;
+  --text-muted: #a1a1aa;
+  --text-faint: #71717a;
+
+  --accent-blue: #60a5fa;
+  --accent-green: #34d399;
+  --accent-yellow: #facc15;
+  --accent-red: #f87171;
+
+  --border-subtle: rgba(255, 255, 255, 0.1);
+}
+
+/* =========================
+   Light theme
+   ========================= */
+
+:root[data-theme="light"] {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+
+  --bg-side: #f1f5f9;
+  --bg-card: #ffffff;
+  --bg-hover: #e5e7eb;
+
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-faint: #64748b;
+
+  --accent-blue: #2563eb;
+  --accent-green: #16a34a;
+  --accent-yellow: #ca8a04;
+  --accent-red: #dc2626;
+
+  --border-subtle: rgba(15, 23, 42, 0.1);
+}
+
+/* =========================
+   Tailwind theme bridge
+   （この形は絶対に維持）
+   ========================= */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* =========================
+   prefers-color-scheme
+   （初回ロード用の保険）
+   ========================= */
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --background: #f8fafc;
+    --foreground: #0f172a;
+  }
+}
+
+/* =========================
+   Base styles
+   ========================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+html {
+  color-scheme: dark light;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    "Apple Color Emoji",
+    "Segoe UI Emoji";
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* =========================
+   Typography tuning
+   ========================= */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+p {
+  line-height: 1.6;
+}
+
+/* =========================
+   Form elements
+   ========================= */
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+}
+
+/* =========================
+   Selection / scrollbar
+   ========================= */
+
+::selection {
+  background: rgba(100, 116, 139, 0.35);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.55);
+}

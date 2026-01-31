@@ -26,11 +26,15 @@ from __future__ import annotations
 from functools import lru_cache
 
 from backend.app.config import Settings
+
 from backend.core.mode_router import ModeRouter
 from backend.core.dev_engine import DevEngine
 from backend.core.workflow import Workflow
+
 from backend.services.llm_service import LLMService
 from backend.services.prompt_builder import PromptBuilder
+
+from backend.infra.snapshot_builder import SnapshotBuilder
 from backend.infra.logger import get_logger
 from backend.infra.supabase import create_supabase_client
 
@@ -71,6 +75,20 @@ def get_supabase_client():
     """
     logger.info("Creating Supabase client")
     return create_supabase_client()
+
+
+def get_snapshot_builder() -> SnapshotBuilder:
+    """
+    SnapshotBuilder を生成する。
+
+    SnapshotBuilder の責務:
+    - WorkspaceIndex + root_path から Snapshot を構築する
+    - ファイル読み取り以外の判断を行わない
+
+    注意:
+    - 状態を持たないためキャッシュ不要
+    """
+    return SnapshotBuilder()
 
 
 # ============================================================
@@ -121,12 +139,13 @@ def get_dev_engine() -> DevEngine:
     DevEngine を生成する。
 
     注意:
-    - 依存するサービスはすべてここで注入する
+    - 依存する全コンポーネントをここで注入する
     - DevEngine 自身は状態を持たない
     """
     return DevEngine(
         llm_service=get_llm_service(),
         prompt_builder=get_prompt_builder(),
+        snapshot_builder=get_snapshot_builder(),
     )
 
 
@@ -136,7 +155,7 @@ def get_workflow() -> Workflow:
 
     注意:
     - Workflow は Backend 実行フローの唯一の入口
-    - ここで組み立てた構成が「正」となる
+    - Workspace / Snapshot どちらの入口も内包する
     """
     return Workflow(
         mode_router=get_mode_router(),
@@ -160,6 +179,7 @@ def get_workflow() -> Workflow:
 __all__ = [
     "get_settings",
     "get_supabase_client",
+    "get_snapshot_builder",
     "get_llm_service",
     "get_prompt_builder",
     "get_mode_router",

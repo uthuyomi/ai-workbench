@@ -7,7 +7,7 @@ Workspace API 定義
 
 この層の役割:
 - Workspace の読み取り・登録・更新の入口を提供する
-- infra 層（将来実装）を呼び出す起点になる
+- infra 層（WorkspaceScanner 等）を呼び出す起点になる
 - 結果をそのままレスポンスとして返す
 
 やってはいけないこと:
@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from backend.app.deps import get_supabase_client
 from backend.domain.workspace_index import WorkspaceIndex
+from backend.infra.workspace_scanner import WorkspaceScanner
 from backend.infra.logger import get_logger
 
 
@@ -75,6 +76,20 @@ class WorkspaceResponse(BaseModel):
 
 
 # ============================================================
+# Dependencies
+# ============================================================
+def get_workspace_scanner() -> WorkspaceScanner:
+    """
+    WorkspaceScanner を生成する Dependency。
+
+    注意:
+    - Scanner は状態を持たないため、毎回生成して問題ない
+    - API 層は「生成と呼び出し」までに責務を限定する
+    """
+    return WorkspaceScanner()
+
+
+# ============================================================
 # Endpoints
 # ============================================================
 @router.post(
@@ -84,31 +99,48 @@ class WorkspaceResponse(BaseModel):
 def scan_workspace(
     request: WorkspaceScanRequest,
     supabase=Depends(get_supabase_client),
+    scanner: WorkspaceScanner = Depends(get_workspace_scanner),
 ) -> WorkspaceResponse:
     """
     Workspace をスキャンして WorkspaceIndex を生成する。
 
-    現フェーズでは未実装。
-
-    理由:
-    - create.md にて WorkspaceScanner は未定義
-    - infra 層の責務が確定していないため
+    処理内容:
+    - 指定された path を WorkspaceScanner に渡す
+    - 実ファイル構造を走査する
+    - WorkspaceIndex をそのまま返す
 
     注意:
-    - 本エンドポイントは「存在のみ保証」する
-    - 実処理は Phase 以降で実装する
+    - Snapshot 生成は行わない
+    - Diff 計算は行わない
+    - 保存処理は行わない
     """
 
     logger.info(
-        "Workspace scan requested (not implemented yet): project_id=%s path=%s",
+        "Workspace scan requested: project_id=%s path=%s",
         request.project_id,
         request.path,
     )
 
-    raise HTTPException(
-        status_code=501,
-        detail="Workspace scan is not implemented yet",
+    try:
+        workspace = scanner.scan(
+            project_id=request.project_id,
+            root_path=request.path,
+        )
+    except Exception as e:
+        # infra 層の例外は API 層で HTTP エラーに変換する
+        logger.exception("Workspace scan failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Workspace scan failed",
+        ) from e
+
+    logger.info(
+        "Workspace scan completed: project_id=%s files=%d",
+        request.project_id,
+        len(workspace.files),
     )
+
+    return WorkspaceResponse(workspace=workspace)
 
 
 @router.get(
@@ -131,8 +163,8 @@ def get_workspace(
 
     try:
         # NOTE:
-        # 現時点では Supabase からの取得処理は未実装。
-        # infra/supabase.py 側で定義されるまで 501 を返す。
+        # 現時点では WorkspaceIndex の永続化は未実装。
+        # infra/supabase.py 側で取得処理が定義されるまでは 501 を返す。
         raise NotImplementedError("Workspace fetch is not implemented yet")
     except NotImplementedError as e:
         raise HTTPException(
@@ -151,9 +183,9 @@ def get_workspace(
 # 使用上の注意（設計固定）
 # ============================================================
 #
-# - Workspace API に Snapshot / Diff を混ぜない
+# - Workspace API に Snapshot / Diff / Workflow を混ぜない
 # - スキャン結果の意味解釈をしない
-# - 未実装機能は 501 で明示的に落とす
+# - IO は infra 層に委ね、API 層は制御に徹する
 #
 # api/workspace.py は
 # 「現実の構造を返す窓口」であり、

@@ -63,10 +63,12 @@ class DevEngine:
     を組み合わせて、
     「変更提案（Diff）」を生成する責務のみを持つ。
 
-    注意:
-    - 状態を保持しない
-    - キャッシュを持たない
-    - 再実行は常に再思考
+    設計上の重要点:
+    - DevEngine 自体は状態を一切持たない
+    - Snapshot は「外部から渡される判断材料」
+    - DevEngine は Snapshot の内容を保存しない
+
+    再実行は常に「再思考」として扱う。
     """
 
     def __init__(
@@ -83,7 +85,7 @@ class DevEngine:
         - prompt_builder  : プロンプト構築担当
         - snapshot_builder: Snapshot 構築担当（infra）
 
-        ※ 依存はすべて外から注入する（DI）
+        ※ 依存はすべて外部から注入する（DI）
         """
 
         self._llm_service = llm_service
@@ -106,7 +108,8 @@ class DevEngine:
         Dev 思考を実行して Diff を生成する。
 
         このメソッドは、
-        API / Controller 層から呼ばれることを想定する。
+        - Workspace Scan → DevEngine 実行
+        という「一気通貫ルート」で使用される。
 
         引数:
         - workspace      : WorkspaceIndex（scan 済み）
@@ -124,15 +127,25 @@ class DevEngine:
         )
 
         # ----------------------------------------------------
-        # Snapshot 構築（ここが今回の接続ポイント）
+        # Snapshot 構築
         # ----------------------------------------------------
+        #
+        # ここが Workspace → Snapshot の変換点。
+        # DevEngine 自身はファイル IO を行わない。
+        #
         snapshot = self._snapshot_builder.build(
             workspace=workspace,
             root_path=root_path,
             target_paths=None,  # 現段階では全体 Snapshot
         )
 
-        # Snapshot を元に通常の run を呼び出す
+        logger.info(
+            "Snapshot built for DevEngine: project_id=%s snapshot_files=%d",
+            snapshot.project_id,
+            len(snapshot.files),
+        )
+
+        # Snapshot を元に、共通の run() を呼び出す
         return self.run(
             snapshot=snapshot,
             existing_diff=existing_diff,
@@ -149,6 +162,12 @@ class DevEngine:
         """
         Snapshot を元に Dev 思考を実行し、Diff を生成する。
 
+        このメソッドは、
+        - Frontend から Snapshot を直接渡す場合
+        - API 経由で Snapshot を生成済みの場合
+
+        の共通入口として扱う。
+
         引数:
         - snapshot       : 判断対象の Snapshot
         - existing_diff  : 既存 Diff（再生成・修正用）
@@ -157,12 +176,12 @@ class DevEngine:
         - Diff（変更提案）
 
         注意:
-        - ここでは Diff の「構造」を作るだけ
-        - 内容の正当性保証は行わない
+        - Snapshot の中身をここで解釈しない
+        - Diff の正当性保証は行わない
         """
 
         logger.info(
-            "DevEngine run started: project_id=%s files=%d",
+            "DevEngine run started: project_id=%s snapshot_files=%d",
             snapshot.project_id,
             len(snapshot.files),
         )
@@ -185,13 +204,13 @@ class DevEngine:
         )
 
         # ----------------------------------------------------
-        # Diff 生成（暫定）
+        # Diff 生成（暫定実装）
         # ----------------------------------------------------
         #
-        # 注意:
-        # - この時点では LLM 応答は「生テキスト」
+        # 現段階では:
+        # - LLM 応答は「生テキスト」
         # - JSON 前提にしない
-        # - パース・検証は後続フェーズの責務
+        # - 厳密なパースは後続フェーズの責務
         #
         diff = self._build_diff_from_response(
             snapshot=snapshot,
@@ -216,12 +235,12 @@ class DevEngine:
         """
         LLM 応答テキストから Diff 構造を組み立てる。
 
-        現段階では:
-        - 全ファイルを「変更対象候補」として扱う
-        - BEFORE は Snapshot の内容
-        - AFTER は LLM 応答全文（暫定）
+        現段階の方針:
+        - Snapshot に含まれる全ファイルを対象にする
+        - BEFORE は Snapshot の生データ
+        - AFTER は LLM 応答全文（仮）
 
-        ※ ここは将来的に段階的に精密化される想定。
+        ※ この処理は将来的に段階的に分離・精密化される。
         """
 
         diff_files: list[DiffFile] = []
@@ -245,9 +264,9 @@ class DevEngine:
 # 使用上の注意（設計固定）
 # ============================================================
 #
-# - DevEngine に IO（ファイル操作）を入れない
-# - Diff 適用ロジックを入れない
-# - 「賢く」しすぎない
+# - DevEngine にファイル IO を追加しない
+# - Diff 適用ロジックを追加しない
+# - Snapshot を内部保存しない
 #
 # DevEngine は「思考装置」であり、
 # 「実行装置」ではない。

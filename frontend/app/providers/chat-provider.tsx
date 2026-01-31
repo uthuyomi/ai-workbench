@@ -175,7 +175,7 @@ type ChatContextValue = {
   setSnapshot: (snapshot: Snapshot) => void;
 
   /**
-   * Backend /chat を呼び出す
+   * Snapshot 前提で Backend Chat を実行する
    */
   runChat: (mode?: string) => Promise<void>;
 
@@ -207,11 +207,15 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   };
 
   /**
-   * Backend /chat 呼び出し
+   * Backend /api/chat/snapshot 呼び出し
    *
-   * 注意:
-   * - Snapshot が無い場合は何もしない
-   * - Diff の解釈はしない
+   * 前提:
+   * - Snapshot は必ず事前に生成済み
+   *
+   * この層では:
+   * - Snapshot を解釈しない
+   * - mode を判断しない
+   * - Diff を加工しない
    */
   const runChat = async (mode?: string) => {
     if (!state.snapshot) {
@@ -225,7 +229,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "REQUEST_START" });
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/chat/snapshot", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -238,7 +242,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       });
 
       if (!res.ok) {
-        throw new Error(`Chat API failed: ${res.status}`);
+        throw new Error(`Chat snapshot API failed: ${res.status}`);
       }
 
       const data = await res.json();

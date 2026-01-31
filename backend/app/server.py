@@ -31,6 +31,7 @@ from backend.app.deps import get_settings
 from backend.api.chat import router as chat_router
 from backend.api.workspace import router as workspace_router
 from backend.api.project import router as project_router
+from backend.api.snapshot import router as snapshot_router
 from backend.infra.logger import get_logger
 from dotenv import load_dotenv
 load_dotenv()
@@ -77,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(chat_router)
     app.include_router(workspace_router)
     app.include_router(project_router)
+    app.include_router(snapshot_router)
 
     # --------------------------------------------------------
     # Health Check

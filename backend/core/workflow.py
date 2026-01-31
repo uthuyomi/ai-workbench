@@ -123,7 +123,6 @@ class Workflow:
         # Mode 解決
         # ----------------------------------------------------
         mode = self._mode_router.resolve_mode(requested_mode)
-
         logger.info("Workflow mode resolved: %s", mode.value)
 
         # ----------------------------------------------------
@@ -156,9 +155,9 @@ class Workflow:
         return diff
 
     # --------------------------------------------------------
-    # Public API（Snapshot 起点：既存互換）
+    # Public API（Snapshot 起点）
     # --------------------------------------------------------
-    def execute(
+    def execute_from_snapshot(
         self,
         snapshot: Snapshot,
         requested_mode: Optional[str] = None,
@@ -167,17 +166,31 @@ class Workflow:
         """
         Snapshot を入口として Backend 処理フローを実行する。
 
-        ※ 既存 API / テスト互換のため残す。
+        想定利用元:
+        - /chat/snapshot API
+        - VSCode Extension
+        - 自動処理フロー
+
+        注意:
+        - Snapshot は「生成済み前提」
+        - Workflow は Snapshot を一切加工しない
         """
 
         logger.info(
-            "Workflow execution (snapshot) started: project_id=%s",
+            "Workflow execution (snapshot) started: project_id=%s files=%d",
             snapshot.project_id,
+            len(snapshot.files),
         )
 
+        # ----------------------------------------------------
+        # Mode 解決
+        # ----------------------------------------------------
         mode = self._mode_router.resolve_mode(requested_mode)
         logger.info("Workflow mode resolved: %s", mode.value)
 
+        # ----------------------------------------------------
+        # Mode ごとの処理分岐
+        # ----------------------------------------------------
         if mode == Mode.DEV:
             diff = self._dev_engine.run(
                 snapshot=snapshot,
@@ -208,7 +221,7 @@ class Workflow:
 #
 # - Workflow に判断ロジックを足さない
 # - Snapshot 構築をここで行わない
-# - Workspace / Snapshot の両入口を許容する
+# - Workspace / Snapshot の両入口を対等に扱う
 #
 # Workflow は
 # 「順番を守らせる存在」であり、

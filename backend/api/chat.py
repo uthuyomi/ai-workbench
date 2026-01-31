@@ -6,7 +6,7 @@ Chat API 定義
 「チャット系リクエスト」を受け取る API エンドポイントを定義する。
 
 この層の役割:
-- 外部（Frontend / Client）からの入力を受け取る
+- 外部（Frontend / Client / VSCode）からの入力を受け取る
 - 入力を最低限バリデーションする
 - Workflow に処理を委譲する
 - 結果をそのままレスポンスとして返す
@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 
 from backend.app.deps import get_workflow
 from backend.core.workflow import Workflow
-from backend.domain.snapshot import Snapshot
+from backend.domain.workspace_index import WorkspaceIndex
 from backend.domain.diff import Diff
 from backend.infra.logger import get_logger
 
@@ -59,17 +59,24 @@ class ChatRequest(BaseModel):
     /chat エンドポイントのリクエストモデル。
 
     注意:
-    - Snapshot は「完成済みのもの」を受け取る
-    - API 層では Snapshot を組み立てない
+    - Snapshot は受け取らない
+    - WorkspaceIndex は「scan 済み前提」
+    - Snapshot 構築は Workflow / DevEngine 側の責務
     """
 
-    snapshot: Snapshot = Field(
-        description="判断対象となる Snapshot"
+    workspace: WorkspaceIndex = Field(
+        description="scan 済み WorkspaceIndex"
     )
+
+    root_path: str = Field(
+        description="実ファイルのルートパス（Snapshot 構築用）"
+    )
+
     mode: Optional[str] = Field(
         default=None,
         description="処理モード（dev / casual 等）",
     )
+
     existing_diff: Optional[Diff] = Field(
         default=None,
         description="既存 Diff（再生成・修正用）",
@@ -103,28 +110,30 @@ def chat(
     チャット処理エンドポイント。
 
     処理内容:
-    - リクエストを受け取る
+    - WorkspaceIndex を受け取る
     - Workflow に処理を委譲する
-    - 結果をそのまま返す
+    - 結果（Diff）をそのまま返す
 
     注意:
-    - ここでは try/except で握りつぶさない
-    - 想定外例外は FastAPI に任せる
+    - Snapshot はここで生成しない
+    - try/except では API 文脈だけを付与する
     """
 
     logger.info(
-        "Chat request received: project_id=%s",
-        request.snapshot.project_id,
+        "Chat request received: project_id=%s files=%d",
+        request.workspace.project_id,
+        len(request.workspace.files),
     )
 
     try:
-        diff = workflow.execute(
-            snapshot=request.snapshot,
+        diff = workflow.execute_from_workspace(
+            workspace=request.workspace,
+            root_path=request.root_path,
             requested_mode=request.mode,
             existing_diff=request.existing_diff,
         )
     except Exception as e:
-        # API 層として最低限の文脈だけを付与する
+        # API 層として最低限の文脈のみを付与
         logger.exception("Chat workflow execution failed")
         raise HTTPException(
             status_code=500,
@@ -143,9 +152,9 @@ def chat(
 # 使用上の注意（設計固定）
 # ============================================================
 #
-# - API 層にロジックを足さない
-# - Snapshot / Diff の意味を解釈しない
-# - エンドポイントを増やす場合は責務単位で分ける
+# - API 層で Snapshot を組み立てない
+# - WorkspaceIndex の意味解釈をしない
+# - Diff を加工しない
 #
 # api/chat.py は
 # 「外界との窓口」であり、

@@ -8,7 +8,7 @@ Workflow 定義
 Workflow の役割:
 - 外部リクエストを受け取る
 - 処理モードを決定する
-- Snapshot を受け取り思考エンジンを実行する
+- WorkspaceIndex / Snapshot を入口として思考エンジンを実行する
 - 結果（Diff）を上位へ返す
 
 重要:
@@ -34,6 +34,7 @@ from __future__ import annotations
 from typing import Optional
 
 from backend.domain.snapshot import Snapshot
+from backend.domain.workspace_index import WorkspaceIndex
 from backend.domain.diff import Diff
 from backend.core.mode_router import Mode, ModeRouter
 from backend.core.dev_engine import DevEngine
@@ -86,19 +87,21 @@ class Workflow:
         logger.info("Workflow initialized")
 
     # --------------------------------------------------------
-    # Public API
+    # Public API（Workspace 起点）
     # --------------------------------------------------------
-    def execute(
+    def execute_from_workspace(
         self,
-        snapshot: Snapshot,
+        workspace: WorkspaceIndex,
+        root_path: str,
         requested_mode: Optional[str] = None,
         existing_diff: Optional[Diff] = None,
     ) -> Diff:
         """
-        Backend 処理フローを実行する。
+        WorkspaceIndex を入口として Backend 処理フローを実行する。
 
         引数:
-        - snapshot        : 判断対象 Snapshot
+        - workspace       : scan 済み WorkspaceIndex
+        - root_path       : 実ファイルのルートパス
         - requested_mode  : 外部から指定された mode
         - existing_diff   : 既存 Diff（再生成・修正用）
 
@@ -106,13 +109,14 @@ class Workflow:
         - Diff（変更提案）
 
         注意:
-        - ここでは例外を握りつぶさない
-        - 上位層（API）がハンドリングする前提
+        - Snapshot 構築は DevEngine 側に委譲する
+        - Workflow は順序制御のみを行う
         """
 
         logger.info(
-            "Workflow execution started: project_id=%s",
-            snapshot.project_id,
+            "Workflow execution (workspace) started: project_id=%s files=%d",
+            workspace.project_id,
+            len(workspace.files),
         )
 
         # ----------------------------------------------------
@@ -126,15 +130,61 @@ class Workflow:
         # Mode ごとの処理分岐
         # ----------------------------------------------------
         if mode == Mode.DEV:
-            # 開発支援モード
+            diff = self._dev_engine.run_from_workspace(
+                workspace=workspace,
+                root_path=root_path,
+                existing_diff=existing_diff,
+            )
+
+        elif mode == Mode.CASUAL:
+            # 現段階では DEV フローにフォールバック
+            logger.info("CASUAL mode currently falls back to DEV flow")
+            diff = self._dev_engine.run_from_workspace(
+                workspace=workspace,
+                root_path=root_path,
+                existing_diff=existing_diff,
+            )
+
+        else:
+            raise RuntimeError(f"Unhandled mode: {mode}")
+
+        logger.info(
+            "Workflow execution (workspace) completed: diff_files=%d",
+            len(diff.files),
+        )
+
+        return diff
+
+    # --------------------------------------------------------
+    # Public API（Snapshot 起点：既存互換）
+    # --------------------------------------------------------
+    def execute(
+        self,
+        snapshot: Snapshot,
+        requested_mode: Optional[str] = None,
+        existing_diff: Optional[Diff] = None,
+    ) -> Diff:
+        """
+        Snapshot を入口として Backend 処理フローを実行する。
+
+        ※ 既存 API / テスト互換のため残す。
+        """
+
+        logger.info(
+            "Workflow execution (snapshot) started: project_id=%s",
+            snapshot.project_id,
+        )
+
+        mode = self._mode_router.resolve_mode(requested_mode)
+        logger.info("Workflow mode resolved: %s", mode.value)
+
+        if mode == Mode.DEV:
             diff = self._dev_engine.run(
                 snapshot=snapshot,
                 existing_diff=existing_diff,
             )
 
         elif mode == Mode.CASUAL:
-            # CASUAL モードは Phase 3（表現層）で扱う想定。
-            # 現段階では DEV と同一フローを通す。
             logger.info("CASUAL mode currently falls back to DEV flow")
             diff = self._dev_engine.run(
                 snapshot=snapshot,
@@ -142,11 +192,10 @@ class Workflow:
             )
 
         else:
-            # Mode Enum が増えた際の安全装置
             raise RuntimeError(f"Unhandled mode: {mode}")
 
         logger.info(
-            "Workflow execution completed: diff_files=%d",
+            "Workflow execution (snapshot) completed: diff_files=%d",
             len(diff.files),
         )
 
@@ -158,8 +207,8 @@ class Workflow:
 # ============================================================
 #
 # - Workflow に判断ロジックを足さない
-# - 各モードの中身は engine / services 側で実装する
-# - Workflow を「便利ハブ」にしない
+# - Snapshot 構築をここで行わない
+# - Workspace / Snapshot の両入口を許容する
 #
 # Workflow は
 # 「順番を守らせる存在」であり、

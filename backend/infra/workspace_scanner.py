@@ -45,6 +45,33 @@ logger = get_logger(__name__)
 
 
 # ============================================================
+# スキャン除外設定（infra 固有）
+# ============================================================
+#
+# 重要:
+# - ここに定義される除外ルールは「ファイルシステム都合」
+# - domain / api / service には一切漏らさない
+# - 将来 .ai-workbenchignore 等を作る場合も
+#   ここが拡張ポイントになる
+#
+
+# Python / JavaScript 系で「読む意味がない or 危険」なディレクトリ
+IGNORE_DIRS = {
+    ".git",
+    "__pycache__",
+    ".venv",
+    ".next",
+    "node_modules",
+}
+
+# 読み取る必要がない・ロックされがちな拡張子
+IGNORE_EXTENSIONS = {
+    ".pyc",
+    ".lock",
+}
+
+
+# ============================================================
 # WorkspaceScanner
 # ============================================================
 class WorkspaceScanner:
@@ -87,18 +114,38 @@ class WorkspaceScanner:
 
         files: List[WorkspaceFile] = []
 
-        # os.walk を使ってディレクトリを再帰的に走査する
+        # ----------------------------------------------------
+        # os.walk による再帰走査
+        #
+        # 注意:
+        # - dirnames を in-place で書き換えることで
+        #   以降の再帰そのものを止める
+        # - これをやらないと .git / node_modules を
+        #   無限に舐めることになる
+        # ----------------------------------------------------
         for dirpath, dirnames, filenames in os.walk(root_path):
+            # 除外ディレクトリをその場で削除
+            dirnames[:] = [
+                d for d in dirnames
+                if d not in IGNORE_DIRS
+            ]
+
             for filename in filenames:
+                # 拡張子ベースの除外
+                _, ext = os.path.splitext(filename)
+                if ext in IGNORE_EXTENSIONS:
+                    continue
+
                 full_path = os.path.join(dirpath, filename)
 
-                # ルートからの相対パスに正規化する
+                # ルートからの相対パスに正規化
                 rel_path = os.path.relpath(full_path, root_path)
 
                 try:
                     file_hash = self._calculate_file_hash(full_path)
                 except (PermissionError, OSError) as e:
-                    # 読めないファイルは想定内（lock / 権限 / 使用中など）
+                    # 読めないファイルは想定内
+                    # （lock / 権限 / 使用中など）
                     logger.info(
                         "Skipped unreadable file: %s (%s)",
                         full_path,
@@ -106,9 +153,7 @@ class WorkspaceScanner:
                     )
                     continue
 
-                # 注意:
-                # - language / imports / exports / dependencies は
-                #   scan フェーズでは扱わないため空値とする
+                # scan フェーズでは意味情報は一切扱わない
                 files.append(
                     WorkspaceFile(
                         path=rel_path.replace(os.sep, "/"),

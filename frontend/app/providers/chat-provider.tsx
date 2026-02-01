@@ -47,6 +47,18 @@ export type Snapshot = {
 };
 
 /**
+ * ChatMessage
+ *
+ * UI に表示する「会話1単位」
+ * Snapshot / Diff と完全に独立
+ */
+export type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
+
+/**
  * DiffFile
  */
 export type DiffFile = {
@@ -80,6 +92,8 @@ export type ChatState = {
   /** 最新の Diff（未生成の場合 null） */
   diff: Diff | null;
 
+  messages: ChatMessage[];
+
   /** 処理中フラグ（Backend 呼び出し中） */
   isLoading: boolean;
 
@@ -93,6 +107,7 @@ export type ChatState = {
 const initialState: ChatState = {
   snapshot: null,
   diff: null,
+  messages: [],
   isLoading: false,
   error: null,
 };
@@ -112,8 +127,9 @@ type ChatAction =
   | { type: "REQUEST_START" }
   | { type: "REQUEST_SUCCESS"; diff: Diff }
   | { type: "REQUEST_ERROR"; error: string }
-  | { type: "RESET" };
-
+  | { type: "RESET" }
+  | { type: "ADD_MESSAGE"; message: ChatMessage }
+  | { type: "CLEAR_MESSAGES" };
 /* =========================================================
  * Reducer
  * ======================================================= */
@@ -152,6 +168,16 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         isLoading: false,
         error: action.error,
       };
+    case "ADD_MESSAGE":
+      return {
+        ...state,
+        messages: [...state.messages, action.message],
+      };
+    case "CLEAR_MESSAGES":
+      return {
+        ...state,
+        messages: [],
+      };
 
     case "RESET":
       return initialState;
@@ -183,6 +209,8 @@ type ChatContextValue = {
    * 状態を完全リセットする
    */
   reset: () => void;
+
+  sendMessage: (content: string) => Promise<void>;
 };
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -259,6 +287,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const sendMessage = async (content: string) => { 
+    dispatch({
+      type: "ADD_MESSAGE",
+      message: {
+        id: crypto.randomUUID(),
+        role: "user",
+        content,
+      }
+    });
+    //　仮: AI応答をまだつながない
+    dispatch({
+      type: "ADD_MESSAGE",
+      message: {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: "OK, received.",
+      }
+    });
+  }
+
   /* -----------------------------
    * Context 提供
    * --------------------------- */
@@ -270,6 +318,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setSnapshot,
         runChat,
         reset,
+        sendMessage,
       }}
     >
       {children}

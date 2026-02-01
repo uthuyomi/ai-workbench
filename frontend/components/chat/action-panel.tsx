@@ -3,17 +3,6 @@
 import { useTranslations } from "next-intl";
 import { useChat } from "@/app/providers/chat-provider";
 
-/**
- * DiffViewer
- *
- * Diff 結果の表示コンポーネント。
- * ActionPanel は「表示場所」を提供するだけで、
- * Diff の中身の解釈・加工はしない。
- *
- * ※ パスはプロジェクト構成に合わせて調整
- */
-import { DiffViewer } from "@/components/chat/diff/DiffViewer";
-
 /* =========================================================
  * API Response Types
  * ======================================================= */
@@ -21,7 +10,9 @@ import { DiffViewer } from "@/components/chat/diff/DiffViewer";
 /**
  * WorkspaceFile
  *
- * Frontend API (/api/workspace/scan) が返す WorkspaceIndex 内の 1 ファイル分メタ情報。
+ * Frontend API (/api/workspace/scan) が返す
+ * WorkspaceIndex 内の 1 ファイル分メタ情報。
+ *
  * 注意:
  * - ActionPanel では中身を一切解釈しない
  * - SnapshotBuilder にそのまま渡すための「運搬用」
@@ -80,7 +71,7 @@ type SnapshotResponse = {
  * 役割:
  * - Workspace Scan → Snapshot Build のトリガー
  * - DevEngine（Chat）の実行トリガー
- * - Snapshot / Diff の「状態・結果」を表示する（DiffViewerをここに置く）
+ * - Snapshot / Diff の「状態・結果」を表示する
  *
  * 設計原則:
  * - UI は操作と表示のみ担当
@@ -100,8 +91,9 @@ export function ActionPanel() {
    *
    * 処理フロー:
    * 1. /api/workspace/scan を呼び出す
-   * 2. 返却された WorkspaceIndex を /api/snapshot/build にそのまま渡す
-   * 3. 生成された Snapshot を Provider にセットする
+   * 2. 返却された WorkspaceIndex を
+   * 3. /api/snapshot/build にそのまま渡す
+   * 4. 生成された Snapshot を Provider にセットする
    *
    * 注意:
    * - Snapshot の内容は完全に Backend 責務
@@ -111,11 +103,13 @@ export function ActionPanel() {
   const handleScan = async () => {
     try {
       /* -----------------------------
-       * 1) Workspace Scan
+       * 1. Workspace Scan
        * --------------------------- */
       const scanRes = await fetch("/api/workspace/scan", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           // TODO: Project Selector 実装後に動的指定
           project_id: "test-project",
@@ -130,13 +124,15 @@ export function ActionPanel() {
       const scanData: WorkspaceScanResponse = await scanRes.json();
 
       /* -----------------------------
-       * 2) Snapshot Build
+       * 2. Snapshot Build
        * --------------------------- */
       const snapshotRes = await fetch("/api/snapshot/build", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          // WorkspaceIndex をそのまま渡す（解釈しない）
+          // WorkspaceIndex をそのまま渡す
           workspace: scanData.workspace,
           root_path: "C:/souce/ai-workbench",
           target_paths: null, // 現段階では全ファイル対象
@@ -150,12 +146,13 @@ export function ActionPanel() {
       const snapshot: SnapshotResponse = await snapshotRes.json();
 
       /* -----------------------------
-       * 3) Provider に Snapshot をセット
+       * 3. Provider に Snapshot をセット
        * --------------------------- */
+      // Snapshot の構造・意味は Provider / Backend 側の責務
       setSnapshot(snapshot);
     } catch (err) {
-      // UI 層では判断・復旧・再試行を行わない（ログだけ）
-      console.error("[ActionPanel][handleScan] error:", err);
+      // UI 層では判断・復旧・再試行を行わない
+      console.error(err);
     }
   };
 
@@ -189,16 +186,12 @@ export function ActionPanel() {
         z-20
         flex
         flex-col
-        border-l
-        border-[var(--border)]
       "
     >
-      {/* =================================================
-          上部（操作・状態）
-          - ここは「固定」にして、下のDiffだけスクロールさせてもOK
-         ================================================= */}
-      <div className="p-4 space-y-4">
-        {/* 説明カード */}
+      <div className="p-4 space-y-4 flex-1 overflow-y-auto">
+        {/* =================================================
+            説明カード
+           ================================================= */}
         <div
           className="
             rounded-2xl
@@ -212,7 +205,9 @@ export function ActionPanel() {
           {t("actionPanel")}
         </div>
 
-        {/* 操作カード */}
+        {/* =================================================
+            操作カード
+           ================================================= */}
         <div
           className="
             rounded-2xl
@@ -266,80 +261,38 @@ export function ActionPanel() {
             {!state.isLoading && state.snapshot && "Snapshot ready"}
             {!state.isLoading && !state.snapshot && "No snapshot"}
           </div>
-
-          {/* 追加の状態情報（見える化） */}
-          <div className="text-[11px] text-[var(--text-muted)] space-y-1 pt-2 border-t border-[var(--border)]">
-            <div>
-              Snapshot files:{" "}
-              <span className="text-[var(--foreground)]">
-                {state.snapshot?.files?.length ?? 0}
-              </span>
-            </div>
-            <div>
-              Diff files:{" "}
-              <span className="text-[var(--foreground)]">
-                {state.diff?.files?.length ?? 0}
-              </span>
-            </div>
-          </div>
         </div>
-      </div>
 
-      {/* =================================================
-          下部（Diff Viewer）
-          - ここが「結果表示領域」
-          - state.diff があるときだけ表示
-          - ChatPanel とは完全に分離
-         ================================================= */}
-      <div className="flex-1 min-h-0 px-4 pb-4">
-        {state.diff ? (
+        {/* =================================================
+            Diff Viewer（結果表示領域）
+           =================================================
+            - Diff が存在する場合のみ表示
+            - 会話（ChatPanel）とは完全に分離
+            - 実装詳細は DiffViewer / DiffFileList に委譲
+        */}
+        {state.diff && (
           <div
             className="
-              h-full
               rounded-2xl
               bg-[var(--bg-card)]
+              p-4
+              space-y-2
               shadow-[0_4px_12px_rgba(0,0,0,0.25)]
-              overflow-hidden
-              flex
-              flex-col
             "
           >
-            {/* 見出し */}
-            <div
-              className="
-                px-4
-                py-3
-                border-b
-                border-[var(--border)]
-                text-xs
-                font-semibold
-                text-[var(--text-muted)]
-              "
-            >
+            <div className="text-xs font-semibold text-[var(--text-muted)]">
               Diff Result
             </div>
 
-            {/* 本体：DiffViewer を “実際に埋め込む” */}
-            <div className="flex-1 min-h-0">
-              {/* DiffViewer は diff を読むだけ。判断しない。 */}
+            {/* 
+              ここに DiffViewer を差し込む想定。
+              例:
               <DiffViewer diff={state.diff} />
+            */}
+
+            <div className="text-xs text-[var(--text-muted)] italic">
+              DiffViewer not implemented yet
             </div>
-          </div>
-        ) : (
-          <div
-            className="
-              h-full
-              rounded-2xl
-              bg-[var(--bg-card)]
-              shadow-[0_4px_12px_rgba(0,0,0,0.25)]
-              flex
-              items-center
-              justify-center
-              text-xs
-              text-[var(--text-muted)]
-            "
-          >
-            No diff yet
           </div>
         )}
       </div>
